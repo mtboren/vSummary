@@ -7,7 +7,7 @@ vSummary - https://github.com/gbolo/vSummary
 
 
 DESCRIPTION:
-    The Function of this script is to retrieve data from vcenter; 
+    The Function of this script is to retrieve data from vcenter;
     then send that data via http POST to a local/remote php server in JSON format.
 
 TODO:
@@ -24,7 +24,7 @@ function post_to_vsummary($json, $url)
     # maybe add gzip and auth or api key?
     try {
         $request = Invoke-WebRequest -Uri $url -Body $json -ContentType "application/json" -Method Post -ErrorAction SilentlyContinue
-    } 
+    }
     catch [System.Net.WebException] {
         $request = $_.Exception.Response
         return 500
@@ -50,17 +50,19 @@ function Hash($textToHash)
     return $res;
 }
 
+## REMOVE THIS FUNCTION, since it is used nowhere in this project; but, if keeping it, it has been updated a bit to be a bit more clean
 function Get-VMHostSerialNumber {
     param([VMware.VimAutomation.Types.VMHost[]]$InputObject = $null)
 
     process {
-        $hView = $_ | Get-View -Property Hardware
-        $serviceTag =  $hView.Hardware.SystemInfo.OtherIdentifyingInfo | where {$_.IdentifierType.Key -eq "ServiceTag" }
-        $assetTag =  $hView.Hardware.SystemInfo.OtherIdentifyingInfo | where {$_.IdentifierType.Key -eq "AssetTag" }
-        $obj = New-Object psobject
-        $obj | Add-Member -MemberType NoteProperty -Name VMHost -Value $_
-        $obj | Add-Member -MemberType NoteProperty -Name ServiceTag -Value $serviceTag.IdentifierValue
-        $obj | Add-Member -MemberType NoteProperty -Name AssetTag -Value $assetTag.IdentifierValue
+        ## get a bit more specific as to the property, to be a bit more efficient -- was about five (5) times faster in my testing
+        $hView = $_ | Get-View -Property Hardware.SystemInfo
+        ## define the properties via New-Object call (like is done in the rest of this .ps1), instead of via Add-Member; and, just get the IdentifierValue property right in the property definition, instead of creating two other, unnecessary variables in this function
+        $obj = New-Object -TypeName PSObject -Property @{
+            VMHost = $_
+            ServiceTag = ($hView.Hardware.SystemInfo.OtherIdentifyingInfo | Where-Object {$_.IdentifierType.Key -eq "ServiceTag"}).IdentifierValue
+            AssetTag = ($hView.Hardware.SystemInfo.OtherIdentifyingInfo | Where-Object {$_.IdentifierType.Key -eq "AssetTag"}).IdentifierValue
+        }
         Write-Output $obj
     }
 }
@@ -68,7 +70,7 @@ function Get-VMHostSerialNumber {
 Function Get-vmSummary ( [string]$vc_uuid ){
 
     $objecttype = "VM"
-
+    ## very precise as to what properties to grab -- good!
     &{Get-View -ViewType VirtualMachine -Property Name,
         Config.Files.VmPathName,
         Config.Hardware.NumCPU,
@@ -94,8 +96,9 @@ Function Get-vmSummary ( [string]$vc_uuid ){
         Runtime.Host | %{
             $vm = $_
             New-Object -TypeName PSobject -Property @{
-                name = $vm.Name  
-                moref = $vm.MoRef.Value              
+                name = $vm.Name
+                ## example of having removed the ".Value" portion that was returning just half of the actual MoRef; see "observations" doc for explanation of this suggestion
+                moref = $vm.MoRef
                 vmx_path = $vm.Config.Files.VmPathName
                 vcpu = $vm.Config.Hardware.NumCPU
                 memory_mb = $vm.Config.Hardware.MemoryMB
@@ -113,11 +116,11 @@ Function Get-vmSummary ( [string]$vc_uuid ){
                 stat_guest_memory_usage = $vm.Summary.Quickstats.GuestMemoryUsage
                 stat_uptime_sec = $vm.Summary.Quickstats.UptimeSeconds
                 power_state = $vm.Runtime.PowerState
-                esxi_moref = $vm.Runtime.Host.Value
-                folder_moref = $vm.Parent.Value
+                esxi_moref = $vm.Runtime.Host
+                folder_moref = $vm.Parent
                 template = $vm.Config.Template
-                vapp_moref = $vm.ParentVApp.Value
-                resourcepool_moref = $vm.ResourcePool.Value
+                vapp_moref = $vm.ParentVApp
+                resourcepool_moref = $vm.ResourcePool
                 vcenter_id = $vc_uuid
                 objecttype = $objecttype
             } ## end new-object
@@ -150,7 +153,7 @@ Function Get-resourcePoolSummary ( [string]$vc_uuid ){
             }
 
             New-Object -TypeName PSobject -Property @{
-                name = $res.Name  
+                name = $res.Name
                 moref = $res.MoRef.Value
                 type = $type
                 status = $res.OverallStatus
@@ -181,6 +184,7 @@ Function Get-vNicSummary ( [string]$vc_uuid ){
         $vm = $_
         $vm_moref = $vm.MoRef.Value
         $esxi_moref = $vm.Runtime.Host.Value
+        ## worthy of a citation?  It _is_ some strong code (like it was in 2011 at https://communities.vmware.com/message/1887826)
         ## updated a bit of View data (to be used in the LinkedView properties later -- this is faster than using multiple Get-View calls for properties that are MoRefs themselves)
         $vm.UpdateViewData("Runtime.Host.ConfigManager.NetworkSystem.NetworkInfo.Vswitch","Runtime.Host.ConfigManager.NetworkSystem.NetworkInfo.ProxySwitch","Runtime.Host.ConfigManager.NetworkSystem.NetworkInfo.PortGroup")
         $vm.Config.Hardware.Device | ?{$_ -is [VMware.Vim.VirtualEthernetCard]} | %{
@@ -210,7 +214,7 @@ Function Get-vNicSummary ( [string]$vc_uuid ){
                     $vswitch_name = $dvs_vm_obj.Name
                     $vswitch_type = if ($dvs_vm_obj) {$dvs_vm_obj.GetType().Name} else {"dvSwitch type not found"}
                     break;
-                } 
+                }
             }
 
             New-Object -TypeName PSobject -Property @{
@@ -469,7 +473,7 @@ Function Get-dvsPgSummary ( [string]$vc_uuid ){
             New-Object -TypeName PSobject -Property @{
                 name = $pg.Name
                 moref = $pg.MoRef.Value
-                vlan_type  = $vlan_type 
+                vlan_type  = $vlan_type
                 vlan = $vlan
                 vlan_start = $vlan_start
                 vlan_end = $vlan_end
@@ -555,7 +559,7 @@ Function Get-vDiskSummary ( [string]$vc_uuid ){
                     datastore_moref = $vdisk.Backing.Datastore.Value
                     uuid = $vdisk.Backing.uuid
                     disk_object_id = $vdisk.diskObjectId
-                    vm_moref = $vm.MoRef.Value              
+                    vm_moref = $vm.MoRef.Value
                     esxi_moref = $vm.Runtime.Host.Value
                     vcenter_id = $vc_uuid
                     objecttype = $objecttype
@@ -566,6 +570,22 @@ Function Get-vDiskSummary ( [string]$vc_uuid ){
 }
 
 function vsummary_checks( [string]$vc_uuid, [string]$url ){
+    ## great opportunity to be efficient by leveraging a data structure and iteration, instead of typing or copying/pasting what are essentially the same two lines over and over and over (14 times over)
+    ## say, like:
+    # $hshChecksToRun = @{
+    #     esxi = "Get-EsxiSummary"
+    #     pnic = "Get-pNicSummary"
+    #     datastore = "Get-datastoreSummary"
+    # }
+    # ## Run Checks
+    # $hshChecksToRun.Keys | Foreach-Object {
+    #     $strThisCheckTopic = $_
+    #     $strFunctionToInvoke = $hshChecksToRun[$strThisCheckTopic]
+    #     $status = post_to_vsummary (& $strFunctionToInvoke $vc_uuid) $url
+    #     Write-Verbose -Verbose "$strThisCheckTopic check http status code: $status"
+    # }
+
+
     # Run Checks
     $status = post_to_vsummary (Get-EsxiSummary $vc_uuid) $url
     Write-Host "esxi check http status code: $status"
@@ -605,9 +625,9 @@ $vsummary_url = 'http://vsummary.linuxctl.com/api/update.php'
 # ADD YOUR VCENTER SERVERS LIKE THIS:
 $vcenters = @{
     LAB = @{ fqdn = 'vcsa1.lab.linuxctl.com'; readonly_user = 'readonly@vsphere.local'; password = 'changeme'; };
-    VDI = @{ fqdn = 'vcsa1.vdi.linuxctl.com'; readonly_user = 'ro@vsphere.local'; password = 'changeme'; }; 
-    PROD = @{ fqdn = 'vcsa1.prod.linuxctl.com'; readonly_user = 'ro@vsphere.local'; password = 'changeme'; }; 
-    DR = @{ fqdn = 'vcsa1.dr.linuxctl.com'; readonly_user = 'ro@vsphere.local'; password = 'changeme'; }; 
+    VDI = @{ fqdn = 'vcsa1.vdi.linuxctl.com'; readonly_user = 'ro@vsphere.local'; password = 'changeme'; };
+    PROD = @{ fqdn = 'vcsa1.prod.linuxctl.com'; readonly_user = 'ro@vsphere.local'; password = 'changeme'; };
+    DR = @{ fqdn = 'vcsa1.dr.linuxctl.com'; readonly_user = 'ro@vsphere.local'; password = 'changeme'; };
 }
 
 foreach($vc in $vcenters.Keys)
@@ -616,12 +636,12 @@ foreach($vc in $vcenters.Keys)
     $vc_fqdn = $vcenters.Item($vc).fqdn
     $vc_user = $vcenters.Item($vc).readonly_user
     $vc_pass = $vcenters.Item($vc).password
-    
+
     if ($global:DefaultVIServers.Count -gt 0) {
         Disconnect-VIServer -Server * -Force -Confirm:$false -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
     }
 
-    $c = Connect-VIServer $vc_fqdn -user $vc_user -password $vc_pass 
+    $c = Connect-VIServer $vc_fqdn -user $vc_user -password $vc_pass
 
     if ($c){
         $vc_uuid = $c.InstanceUuid
@@ -647,7 +667,7 @@ foreach($vc in $vcenters.Keys)
     } Else {
         Write-Host "Could not connect to $vc_fqdn"
     }
-    
+
 }
 
 if ($global:DefaultVIServers.Count -gt 0) {

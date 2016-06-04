@@ -1,0 +1,49 @@
+observations/suggestions (requested 17 May 2016 at https://communities.vmware.com/message/2596490#2596490):
+
+general impression of vSummary project:  interesting combination of vSphere inventorying, DB storing, and web displaying -- cool; and, the PowerCLI is pretty tight -- not much need to tweak/optimize
+
+specific observations on opportunities to make the PowerShell even better:
+follow Good PowerShell Practices:
+	use a prefix to the nouns to remove (or at least reduce) likelihood of function/cmdlet name collisions
+		-not necessarily with any cmdlets/functions that you know of or use, but for consumers whose PowerShell session may have a module/snapin with cmdlets of the same name, causing issue
+		-maybe, "VS" as a prefix; so, like:  Get-VSVMSummary, Get-VSpNicSummary
+	adhere to standard verb-noun PowerShell convention for function names:
+		-example:  "Send-VSVSummaryData" or "Save-VSVSummaryData", instead of "post_to_vsummary"
+	expand all aliases in the code
+		-better for readability (not everyone knows all aliases, no matter how common the alias may seem)
+	style:
+		-capitalization on cmdlets and parameter names:  capitalize them as they were written
+			-does not affect functionality, of course, but adds "finish" or "polish" to the project
+			-ex:  "ConvertTo-Json", as written by Microsoft, instead of convertto-JSON
+	verbosity and logging messages:
+		-use Write-Verbose instead of Write-Host for verbose messages about status and the likes; somewhat of a matter of opinion, but, this is the opinion of several big time PowerShell people (to include the inventor of PowerShell, Jeffrey Snover); plenty of posts about this on the web
+	IMPORTANT SECURITY TOPIC:  allow for use of encrypted credentials, instead of forcing people to put passwords in clear text in a script/config file
+		-readonly vCenter access or not, it is always far better from the security perspective to provide secure credential handling
+		-could support this as easily as:
+			-having user export encrypted credential like:  "Get-Credential -UserName myvcenteruser | Export-Clixml c:\data\myencryptedcreds.xml"
+			-then importing the creds from XML via "$credForVCenter = Get-Item c:\data\myencryptedcreds.xml | Import-Clixml"
+			-this uses the Windows DPAPI (Data Protection API) to encrypt / decrypt the creds, and allows only the same user the encrypted them to decrypt them, and only from the same machine on which the creds were exported/encrypted
+		-then, instead of config items for username/password, it's just a config item for the file path to the encrypted credentials file
+
+
+PowerCLI things:
+	for all of the places in which new *moref properties are being set for new return objects:
+		-a real MoRef is made of of both the Type and the Value properties:  do not use ".Value" to just get the "Value" portion of the MoRef
+		-so, to make MoRef properties that can later be used, say, to retrieve the corresponding objects, keep both the Type and Value portions of the MoRef
+		-example:  updated the code in the New-Object call in the Get-vmSummary function to remove the .Value portion, so that the properties get the full MoRef, not just half of it
+			-if this causes issue in writing to the DB (because the value of the new object's property will now be an object with two properties), one could call the .ToString() method on the MoRef, to get a single string that still fully represents the MoRef
+		-and, reason:  to use the MoRef to get an object, you must have both the Type and Value, like the following example where the full MoRef (Type and Value) for some HostSystem is "HostSystem-host-18318":
+			works:			Get-View -Property Name -Id HostSystem-host-18318
+			does not work:  Get-View -Property Name -Id host-18318
+	cite source for some of the extra serious code?  Like, the heavy-lifting bits in Get-vNicSummary?  Granted, things posted in forums are _meant_ to be used by <as many people as possible>, but, it's always good to give a nod when leveraging goodness from elsewhere
+
+
+cleanup:
+	remove function Get-VMHostSerialNumber, as it is used nowhere
+		-but, if keeping it, there are a few things to update in it (updated in the function definition itself)
+
+
+other:
+	put the configuration section in some other file, just to make things easier for the consumer -- if they don't need to look at 619 lines of PowerShell code to get down to the config section, don't make them
+		-say, in "configItems.ps1" in the "powershell" subfolder?
+		-can then dot-source that config file from the main <whatever .ps1 file is invoked>
